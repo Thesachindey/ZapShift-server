@@ -1,0 +1,4 @@
+serviceKey.json
+.env
+node_modules
+.vercel
