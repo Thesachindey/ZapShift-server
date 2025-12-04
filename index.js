@@ -8,6 +8,16 @@ const port = process.env.PORT || 3000
 
 const crypto = require("crypto");
 
+//-------
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./zap-shift-ts-firebase-adminsdk.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+//----------
+
 function generateTrackingId() {
     const ts = Date.now().toString(36).toUpperCase();
     const rand = crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -22,8 +32,30 @@ function generateTrackingId() {
 app.use(express.json());
 app.use(cors());
 //----------------------
+const verifyFBToken = async (req, res, next) => {
+    // console.log('Headers in the middleware', req.headers?.authorization);
+    const token = req.headers.authorization;
+
+    if (!token) {
+        return res.status(401).send({ message: "Unauthorized access" })
+    }
+
+    try {
+        const idToken = token.split(' ')[1];
+        const decoded = await admin.auth().verifyIdToken(idToken)
+        console.log('decoded in the token', decoded);
+
+        req.decoded_email = decoded.email;
+
+        next();
+    }
+    catch (error) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
 
 
+}
+//--------------
 const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.6fqewb1.mongodb.net/?appName=Cluster0`;
 
 
@@ -143,7 +175,21 @@ async function run() {
             const sessionId = req.query.session_id;
 
             const session = await stripe.checkout.sessions.retrieve(sessionId);
-            console.log('session retrieve', session)
+
+            // console.log('session retrieve', session)
+            const transactionId = session.payment_intent;
+            const query = { transactionId: transactionId }
+
+            const paymentExist = await paymentCollection.findOne(query);
+            console.log(paymentExist)
+
+            if (paymentExist) {
+                return res.send({
+                    massage: 'already exists',
+                    transactionId,
+                    trackingId: paymentExist.trackingId,
+                })
+            }
 
             const trackingId = generateTrackingId();
 
@@ -167,6 +213,7 @@ async function run() {
                     transactionId: session.payment_intent,
                     paymentStatus: session.payment_status,
                     paidAt: new Date(),
+                    trackingId: trackingId,
 
                 }
                 if (session.payment_status === 'paid') {
@@ -176,8 +223,8 @@ async function run() {
                         success: true,
                         modifyParcel: result,
                         paymentInfo: resultPayment,
-                        trackingId:trackingId,
-                         transactionId: session.payment_intent,
+                        trackingId: trackingId,
+                        transactionId: session.payment_intent,
                     })
                 }
 
@@ -185,6 +232,28 @@ async function run() {
 
             res.send({ success: false })
         })
+
+
+        //payment related apis
+        app.get('/payments', verifyFBToken, async (req, res) => {
+            const email = req.query.email;
+            const query = {}
+
+            console.log('Headers--->', req.headers)
+            if (email) {
+                query.customEmail = email
+
+                //check email address
+                if(email!==req.decoded_email){
+                    return res.status(403).send({message:'forbidden access'})
+                }
+            }
+            const cursor = paymentCollection.find(query);
+            const result = await cursor.toArray()
+            res.send(result)
+        })
+
+
 
 
         // Send a ping to confirm a successful connection
