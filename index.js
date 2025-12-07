@@ -74,8 +74,31 @@ async function run() {
         //----------------start from here---------------
         //database connection
         const db = client.db('zap_shift_db');
+        const usersCollection = db.collection('users');
         const parcelsCollection = db.collection('parcels');
         const paymentCollection = db.collection('payments');
+        const ridersCollection = db.collection('riders');
+
+        //-----------------------------------
+
+
+        //user related apis
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            user.role = 'user';
+            user.createdAt = new Date();
+            const email = user.email;
+            const userExist = await usersCollection.findOne({ email })
+
+            if (userExist) {
+                return res.send({ massage: 'user exist' })
+            }
+
+            const result = await usersCollection.insertOne(user);
+            res.send(result);
+        })
+
+
 
         //parcels api 
         app.get('/parcels', async (req, res) => {
@@ -244,17 +267,41 @@ async function run() {
                 query.customEmail = email
 
                 //check email address
-                if(email!==req.decoded_email){
-                    return res.status(403).send({message:'forbidden access'})
+                if (email !== req.decoded_email) {
+                    return res.status(403).send({ message: 'forbidden access' })
                 }
             }
-            const cursor = paymentCollection.find(query);
+            const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
             const result = await cursor.toArray()
             res.send(result)
         })
 
+        //-------------------------------------------
+        //Riders related APIs
+        app.post('/riders', async (req, res) => {
+            const rider = req.body;
+            rider.status = 'pending';
+            rider.createdAt = new Date();
 
+            // check if rider already exists
+            const exists = await ridersCollection.findOne({ email: rider.email });
+            if (exists) {
+                return res.send({ message: 'Already exists' });
+            }
 
+            const result = await ridersCollection.insertOne(rider);
+            res.send(result);
+        })
+        //get
+        app.get('/riders', async (req, res) => {
+            const query = {}
+            if (req.query.status) {
+                query.status = req.query.status;
+            }
+            const cursor = ridersCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        })
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
