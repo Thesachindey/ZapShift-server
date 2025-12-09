@@ -83,6 +83,15 @@ async function run() {
 
 
         //user related apis
+        // get 
+        app.get('/users',verifyFBToken, async (req, res) => {
+            const cursor = usersCollection.find();
+            const result = await cursor.toArray();
+            res.send(result);
+        })
+
+
+        // post 
         app.post('/users', async (req, res) => {
             const user = req.body;
             user.role = 'user';
@@ -284,7 +293,8 @@ async function run() {
             rider.createdAt = new Date();
 
             // check if rider already exists
-            const exists = await ridersCollection.findOne({ email: rider.email });
+            const exists = await ridersCollection.findOne({ riderEmail: rider.riderEmail });
+
             if (exists) {
                 return res.send({ message: 'Already exists' });
             }
@@ -292,6 +302,7 @@ async function run() {
             const result = await ridersCollection.insertOne(rider);
             res.send(result);
         })
+
         //get
         app.get('/riders', async (req, res) => {
             const query = {}
@@ -302,6 +313,44 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         })
+        //update
+        app.patch('/riders/:id', verifyFBToken, async (req, res) => {
+            const status = req.body.status;
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    status: status
+                }
+            }
+            const result = await ridersCollection.updateOne(query, updateDoc);
+
+
+            if (status === 'approved') {
+                const email = req.body.email;
+                const userQuery = { email }
+                const updateUser = {
+                    $set: {
+                        role: 'rider'
+                    }
+                }
+                const userResult = await usersCollection.updateOne(userQuery, updateUser)
+            }
+
+
+            res.send(result);
+        })
+
+
+        //riders delete one
+        app.delete('/riders/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+
+            const result = await ridersCollection.deleteOne(query);
+            res.send(result);
+        })
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
