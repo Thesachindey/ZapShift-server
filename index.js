@@ -80,16 +80,65 @@ async function run() {
         const ridersCollection = db.collection('riders');
 
         //-----------------------------------
-
+        //middle admin before allowing admin activity
+        //must be used after verifyFBToken middleware
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await usersCollection.findOne(query);
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ massage: 'forbidden access' })
+            }
+            next()
+        }
 
         //user related apis
         // get 
-        app.get('/users',verifyFBToken, async (req, res) => {
-            const cursor = usersCollection.find();
+        app.get('/users', verifyFBToken, async (req, res) => {
+            const searchText = req.query.searchText;
+            const query = {};
+
+            if (searchText) {
+                // query.displayName = { $regex: searchText, $options: "i" }
+
+                query.$or= [
+                    { displayName: { $regex: searchText, $options: "i" } },
+                    { email: { $regex: searchText, $options: "i" } }
+                ]
+            }
+
+
+            const cursor = usersCollection.find(query).sort({ createdAt: -1 }).limit(2);
             const result = await cursor.toArray();
             res.send(result);
         })
 
+        app.get('/users/:id', async (req, res) => {
+
+        })
+
+        app.get('/users/:email/role', async (req, res) => {
+            const email = req.params.email
+            const query = { email }
+            const user = await usersCollection.findOne(query)
+            res.send({ role: user?.role || 'user' })
+
+        })
+
+
+        //update
+        app.patch('/users/:id', verifyFBToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const roleInfo = req.body;
+            const query = { _id: new ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    role: roleInfo.role
+                }
+            }
+            const result = await usersCollection.updateOne(query, updateDoc)
+            res.send(result);
+        })
 
         // post 
         app.post('/users', async (req, res) => {
